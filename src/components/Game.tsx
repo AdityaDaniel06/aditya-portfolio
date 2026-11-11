@@ -2,35 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import SectionTitle from "./SectionTitle";
+import PixelSprite from "./PixelSprite";
 import { useReveal } from "@/lib/useReveal";
 import { emitCoin } from "@/lib/gsap";
+import { heart } from "@/lib/sprites";
+import { H, W } from "@/lib/game/constants";
 import {
-  Sprite,
-  bug,
-  bug2,
-  cloud,
-  coin,
-  grassTile,
-  heroIdle,
-  heroJump,
-  heroWalk,
-  spriteSize,
-  spriteToCanvas,
-} from "@/lib/sprites";
+  canDoubleJump, comboMult, createState, draw, jump, loadArt, releaseJump, score, step,
+  type GameState,
+} from "@/lib/game/engine";
 
-// "Bug Dash": an original endless runner. Jump the glitch bugs, grab coins.
-// The canvas is drawn at a tiny internal resolution and scaled up with CSS
-// (image-rendering: pixelated), which keeps every pixel crisp.
+// "Bug Dash": an original endless runner. Jump the glitch bugs, stomp them,
+// grab coins and power-ups. Rules live in src/lib/game/; this component runs
+// the loop, handles input and shows the HUD. The canvas is drawn at a tiny
+// internal resolution and scaled up with CSS (image-rendering: pixelated).
 
-const W = 320;
-const H = 160;
-const GROUND = H - 20; // y of the ground surface
-const GRAVITY = 0.42;
-const JUMP_V = -7.2;
 const BEST_KEY = "bugdash-best";
 
 type Status = "ready" | "playing" | "paused" | "over";
-type Thing = { x: number; y: number; w: number; h: number; kind: "bug" | "coin"; hit?: boolean };
+type Hud = { score: number; lives: number; mult: number; star: number; magnet: number; dbl: boolean };
+
+const emptyHud: Hud = { score: 0, lives: 0, mult: 1, star: 0, magnet: 0, dbl: false };
 
 function readBest() {
   try {
@@ -47,74 +39,57 @@ function saveBest(n: number) {
   }
 }
 
+const hudOf = (s: GameState): Hud => ({
+  score: score(s),
+  lives: s.lives,
+  mult: comboMult(s),
+  star: Math.ceil(s.star / 60),
+  magnet: Math.ceil(s.magnet / 60),
+  dbl: canDoubleJump(s),
+});
+const sameHud = (a: Hud, b: Hud) =>
+  a.score === b.score && a.lives === b.lives && a.mult === b.mult &&
+  a.star === b.star && a.magnet === b.magnet && a.dbl === b.dbl;
+
 export default function Game() {
   const sectionRef = useRef<HTMLElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>("ready");
-  const [score, setScore] = useState(0);
+  const [hud, setHud] = useState<Hud>(emptyHud);
   const [best, setBest] = useState(0);
   useReveal(sectionRef);
 
-  // Mutable game state lives in a ref so the RAF loop never re-renders React.
-  const g = useRef({
-    status: "ready" as Status,
-    y: GROUND,
-    vy: 0,
-    holding: false,
-    speed: 2.2,
-    dist: 0,
-    coins: 0,
-    things: [] as Thing[],
-    spawnIn: 60,
-    frame: 0,
-    groundX: 0,
-    clouds: [
-      { x: 40, y: 18, s: 0.25 },
-      { x: 190, y: 34, s: 0.35 },
-      { x: 290, y: 12, s: 0.2 },
-    ],
-  });
+  // Mutable game state lives in refs so the RAF loop never re-renders React.
+  const g = useRef<GameState>(createState());
+  const statusRef = useRef<Status>("ready");
 
   const setBoth = useCallback((s: Status) => {
-    g.current.status = s;
+    statusRef.current = s;
     setStatus(s);
   }, []);
 
   const reset = useCallback(() => {
-    Object.assign(g.current, {
-      y: GROUND,
-      vy: 0,
-      speed: 2.2,
-      dist: 0,
-      coins: 0,
-      things: [],
-      spawnIn: 60,
-      frame: 0,
-    });
-    setScore(0);
+    g.current = createState();
+    setHud(emptyHud);
   }, []);
 
   const press = useCallback(() => {
-    const s = g.current;
-    if (s.status === "ready" || s.status === "over") {
+    const st = statusRef.current;
+    if (st === "ready" || st === "over") {
       reset();
       setBoth("playing");
       return;
     }
-    if (s.status === "paused") {
+    if (st === "paused") {
       setBoth("playing");
       return;
     }
-    s.holding = true;
-    if (s.y >= GROUND) s.vy = JUMP_V;
+    g.current.holding = true;
+    jump(g.current);
   }, [reset, setBoth]);
 
-  const release = useCallback(() => {
-    const s = g.current;
-    s.holding = false;
-    if (s.vy < -3) s.vy = -3; // short hop when the button is tapped
-  }, []);
+  const release = useCallback(() => releaseJump(g.current), []);
 
   useEffect(() => setBest(readBest()), []);
 
@@ -124,7 +99,7 @@ export default function Game() {
     const active = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return false;
-      return g.current.status === "playing" || document.activeElement === wrapRef.current;
+      return statusRef.current === "playing" || document.activeElement === wrapRef.current;
     };
     const down = (e: KeyboardEvent) => {
       if (!isJumpKey(e.key) || !active(e)) return;
@@ -133,7 +108,7 @@ export default function Game() {
     };
     const up = (e: KeyboardEvent) => {
       if (isJumpKey(e.key)) release();
-      if (e.key === "Escape" && g.current.status === "playing") setBoth("paused");
+      if (e.key === "Escape" && statusRef.current === "playing") setBoth("paused");
     };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -148,7 +123,7 @@ export default function Game() {
     const el = wrapRef.current;
     if (!el) return;
     const io = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting && g.current.status === "playing") setBoth("paused");
+      if (!entry.isIntersecting && statusRef.current === "playing") setBoth("paused");
     });
     io.observe(el);
     return () => io.disconnect();
@@ -161,134 +136,39 @@ export default function Game() {
     const ctx = canvas.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
 
-    const img = (s: Sprite) => spriteToCanvas(s, 1);
-    const art = {
-      idle: img(heroIdle),
-      walk: img(heroWalk),
-      jump: img(heroJump),
-      bug: img(bug),
-      bug2: img(bug2),
-      coin: img(coin),
-      cloud: img(cloud),
-      grass: img(grassTile),
+    const art = loadArt();
+    const font = getComputedStyle(document.body).getPropertyValue("--font-press-start").trim() || "monospace";
+    const shake = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let lastHud = emptyHud;
+    let hudTick = 0;
+
+    const events = {
+      coin: (n: number) => emitCoin(n),
+      over: (final: number) => {
+        setHud({ ...lastHud, score: final });
+        if (final > readBest()) {
+          saveBest(final);
+          setBest(final);
+        }
+        setBoth("over");
+      },
     };
-    const hero = spriteSize(heroIdle);
-    const stars = Array.from({ length: 40 }, () => ({
-      x: Math.random() * W,
-      y: Math.random() * (GROUND - 30),
-      t: Math.random() * 100,
-    }));
 
     let raf = 0;
     let last = performance.now();
-
-    const step = (dt: number) => {
-      const s = g.current;
-      s.frame += dt;
-      s.speed = Math.min(5.5, s.speed + 0.0009 * dt);
-      s.dist += s.speed * dt;
-
-      // player physics (holding the button = floatier jump)
-      s.vy += (s.holding && s.vy < 0 ? GRAVITY * 0.6 : GRAVITY) * dt;
-      s.y = Math.min(GROUND, s.y + s.vy * dt);
-      if (s.y >= GROUND) s.vy = 0;
-
-      // spawn
-      s.spawnIn -= dt;
-      if (s.spawnIn <= 0) {
-        const roll = Math.random();
-        if (roll < 0.65) {
-          s.things.push({ x: W + 10, y: GROUND - 10, w: 10, h: 10, kind: "bug" });
-        } else {
-          const n = 3 + Math.floor(Math.random() * 3);
-          const y = GROUND - 30 - Math.random() * 30;
-          for (let i = 0; i < n; i++) s.things.push({ x: W + 10 + i * 14, y, w: 8, h: 8, kind: "coin" });
-        }
-        s.spawnIn = (55 + Math.random() * 70) * (2.4 / s.speed) + 18;
-      }
-
-      // move + collide
-      const px = 40 + 2;
-      const py = s.y - hero.h + 2;
-      const pw = hero.w - 4;
-      const ph = hero.h - 3;
-      for (const t of s.things) {
-        t.x -= s.speed * dt;
-        if (t.hit) continue;
-        const overlap = px < t.x + t.w - 2 && px + pw > t.x + 2 && py < t.y + t.h && py + ph > t.y + 2;
-        if (!overlap) continue;
-        if (t.kind === "coin") {
-          t.hit = true;
-          s.coins++;
-          emitCoin();
-        } else {
-          const final = Math.floor(s.dist / 10) + s.coins * 10;
-          setScore(final);
-          if (final > readBest()) {
-            saveBest(final);
-            setBest(final);
-          }
-          setBoth("over");
-          return;
-        }
-      }
-      s.things = s.things.filter((t) => t.x > -20 && !t.hit);
-      for (const c of s.clouds) {
-        c.x -= s.speed * c.s * dt;
-        if (c.x < -20) c.x = W + Math.random() * 60;
-      }
-      s.groundX = (s.groundX + s.speed * dt) % 12;
-      if (Math.floor(s.frame) % 6 === 0) setScore(Math.floor(s.dist / 10) + s.coins * 10);
-    };
-
-    const draw = () => {
-      const s = g.current;
-      const grd = ctx.createLinearGradient(0, 0, 0, H);
-      grd.addColorStop(0, "#0d0b2b");
-      grd.addColorStop(1, "#5b3fb0");
-      ctx.fillStyle = grd;
-      ctx.fillRect(0, 0, W, H);
-
-      for (const st of stars) {
-        ctx.fillStyle = Math.sin((s.frame + st.t) / 12) > 0 ? "#fff6e0" : "#7b6bd6";
-        ctx.fillRect(Math.floor(st.x), Math.floor(st.y), 1, 1);
-      }
-      // moon
-      ctx.fillStyle = "#ffd23f";
-      ctx.fillRect(266, 14, 18, 18);
-      ctx.fillStyle = "#0d0b2b";
-      ctx.fillRect(274, 14, 10, 8);
-
-      ctx.globalAlpha = 0.35;
-      for (const c of s.clouds) ctx.drawImage(art.cloud, Math.floor(c.x), c.y);
-      ctx.globalAlpha = 1;
-
-      for (let x = -Math.floor(s.groundX); x < W; x += 12) ctx.drawImage(art.grass, x, GROUND);
-      ctx.fillStyle = "#8a4a1e";
-      ctx.fillRect(0, GROUND + 8, W, H - GROUND - 8);
-
-      const flap = Math.floor(s.frame / 8) % 2 === 0;
-      for (const t of s.things) {
-        if (t.kind === "bug") ctx.drawImage(flap ? art.bug : art.bug2, Math.floor(t.x), Math.floor(t.y));
-        else {
-          const bob = Math.sin((s.frame + t.x) / 6) > 0 ? 0 : 1;
-          ctx.drawImage(art.coin, Math.floor(t.x), Math.floor(t.y) + bob);
-        }
-      }
-
-      const sprite =
-        s.y < GROUND ? art.jump : s.status === "playing" && Math.floor(s.frame / 6) % 2 ? art.walk : art.idle;
-      ctx.drawImage(sprite, 40, Math.floor(s.y - hero.h));
-    };
-
     const loop = (now: number) => {
       const dt = Math.min(2, (now - last) / (1000 / 60));
       last = now;
-      if (g.current.status === "playing") step(dt);
-      draw();
+      const s = g.current;
+      const playing = statusRef.current === "playing";
+      if (playing && !step(s, dt, events) && (hudTick += dt) >= 6) {
+        hudTick = 0;
+        const next = hudOf(s);
+        if (!sameHud(next, lastHud)) setHud((lastHud = next));
+      }
+      draw(ctx, s, art, { playing, font, shake });
       raf = requestAnimationFrame(loop);
     };
-    draw(); // paint the first frame immediately
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, [setBoth]);
@@ -306,7 +186,7 @@ export default function Game() {
           level="BONUS STAGE"
           title="BUG DASH"
           light
-          sub="Production is full of bugs. Jump over them and grab every coin. Hold to jump higher."
+          sub="Production is full of bugs. Jump them, stomp them, bump code blocks for coins and grab power-ups."
         />
 
         <div data-reveal="pop" className="px-box bg-ink! p-3">
@@ -325,29 +205,32 @@ export default function Game() {
             onPointerLeave={release}
             style={{ touchAction: "manipulation" }}
           >
-            <canvas
-              ref={canvasRef}
-              width={W}
-              height={H}
-              className="pixelated block aspect-[2/1] w-full"
-            />
+            <canvas ref={canvasRef} width={W} height={H} className="pixelated block aspect-[2/1] w-full" />
 
-            <div className="font-pixel pointer-events-none absolute inset-x-0 top-0 flex justify-between p-3 text-[10px] text-cream sm:text-xs">
-              <span>SCORE {String(score).padStart(5, "0")}</span>
-              <span className="text-yellow">BEST {String(best).padStart(5, "0")}</span>
+            <div className="font-pixel pointer-events-none absolute inset-x-0 top-0 p-3 text-[10px] text-cream sm:text-xs">
+              <div className="flex justify-between">
+                <span>SCORE {String(hud.score).padStart(5, "0")}</span>
+                <span className="text-yellow">BEST {String(best).padStart(5, "0")}</span>
+              </div>
+              {status === "playing" && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[8px] sm:text-[10px]">
+                  {Array.from({ length: hud.lives }, (_, i) => (
+                    <PixelSprite key={i} sprite={heart} scale={2} />
+                  ))}
+                  {hud.mult > 1 && <span className="text-pink">COMBO x{hud.mult}</span>}
+                  {hud.star > 0 && <span className="text-yellow">★ {hud.star}s</span>}
+                  {hud.magnet > 0 && <span className="text-blue">MAGNET {hud.magnet}s</span>}
+                  {hud.dbl && <span className="text-green">2x JUMP</span>}
+                </div>
+              )}
             </div>
 
             {status !== "playing" && (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-ink/45 text-center">
-                <p
-                  className="font-pixel text-2xl text-yellow sm:text-4xl"
-                  style={{ textShadow: "4px 4px 0 #ff4f9a" }}
-                >
+                <p className="font-pixel text-2xl text-yellow sm:text-4xl" style={{ textShadow: "4px 4px 0 #ff4f9a" }}>
                   {overlay[status].title}
                 </p>
-                {status === "over" && (
-                  <p className="font-pixel mt-4 text-xs text-cream">SCORE {score}</p>
-                )}
+                {status === "over" && <p className="font-pixel mt-4 text-xs text-cream">SCORE {hud.score}</p>}
                 <p className="font-pixel anim-blink mt-6 px-4 text-[9px] text-cream sm:text-[11px]">
                   {overlay[status].cta}
                 </p>
@@ -355,9 +238,14 @@ export default function Game() {
             )}
           </div>
         </div>
-        <p className="font-pixel mt-6 text-center text-[9px] text-cream/70">
-          SPACE / ↑ / W = JUMP · ESC = PAUSE · COINS ALSO COUNT IN THE TOP BAR
-        </p>
+        <ul className="font-pixel mx-auto mt-6 grid max-w-3xl gap-2 text-center text-[9px] text-cream/70 sm:grid-cols-2">
+          <li>SPACE / ↑ / W / TAP = JUMP · HOLD = HIGHER</li>
+          <li>LAND ON BUGS TO SQUASH THEM</li>
+          <li>HEAD-BUMP ORANGE BLOCKS FOR COINS</li>
+          <li>10 COINS = DOUBLE JUMP · ESC = PAUSE</li>
+          <li>♥ EXTRA LIFE · ★ INVINCIBLE · MAGNET PULLS COINS</li>
+          <li>CHAIN COINS FOR x2 / x3 COMBOS</li>
+        </ul>
       </div>
     </section>
   );
