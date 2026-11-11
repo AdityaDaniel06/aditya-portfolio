@@ -173,6 +173,16 @@ input:focus-visible {
 .anim-blink { animation: blink 1s steps(1) infinite; }
 .anim-marquee { animation: marquee 30s linear infinite; }
 
+/* Attention ring around the chat launcher */
+@keyframes px-ping {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.anim-ping { animation: px-ping 1.6s steps(6) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-ping { animation: none; opacity: 0; }
+}
+
 /* Ground strip (repeating grass tile drawn with gradients) */
 .ground {
   height: 64px;

@@ -104,10 +104,16 @@ export default function ChatBot() {
         aria-expanded={open}
         aria-controls="chat-panel"
         aria-label={open ? "Close chat" : `Chat with ${firstName}'s AI sidekick`}
-        className="fixed bottom-5 right-5 z-[60] flex items-center gap-2 bg-blue px-3 py-3 shadow-[0_0_0_4px_#1b1b2f,6px_6px_0_4px_rgba(0,0,0,0.35)] transition-transform hover:-translate-y-1"
+        className="group fixed bottom-5 right-5 z-[60] flex items-center gap-3 bg-blue px-4 py-3 shadow-[0_0_0_4px_#1b1b2f,8px_8px_0_4px_rgba(0,0,0,0.35)] transition-transform hover:-translate-y-1 active:translate-y-0 sm:gap-4 sm:px-6 sm:py-4"
       >
-        <PixelSprite sprite={chatBubble} scale={3} className={open ? "" : "anim-bob"} />
-        <span className="font-pixel hidden text-[10px] sm:inline">{open ? "CLOSE" : "ASK ME"}</span>
+        {!open && (
+          <span
+            aria-hidden
+            className="anim-ping pointer-events-none absolute inset-0 shadow-[0_0_0_4px_#ffd23f]"
+          />
+        )}
+        <PixelSprite sprite={chatBubble} scale={4} className={open ? "" : "anim-bob"} />
+        <span className="font-pixel text-xs leading-none sm:text-sm">{open ? "CLOSE" : "ASK ME!"}</span>
       </button>
 
       {open &&
@@ -115,8 +121,8 @@ export default function ChatBot() {
         // Outer wrapper only pins the panel to the viewport; the inner .px-box
         // (which sets position: relative) handles the look.
         <div
-          style={{ position: "fixed", right: 20, bottom: 96, zIndex: 60 }}
-          className="h-[min(560px,calc(100svh-140px))] w-[min(380px,calc(100vw-40px))]"
+          style={{ position: "fixed", right: 20, bottom: 120, zIndex: 60 }}
+          className="h-[min(560px,calc(100svh-160px))] w-[min(380px,calc(100vw-40px))]"
         >
         <div
           id="chat-panel"
@@ -138,6 +144,14 @@ export default function ChatBot() {
               </p>
             </div>
             <span className={`h-3 w-3 ${offline ? "bg-yellow" : "bg-green"}`} aria-hidden />
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close chat"
+              className="font-pixel flex h-9 w-9 items-center justify-center bg-pink text-sm text-white shadow-[0_0_0_3px_#fff6e0] transition-transform hover:-translate-y-0.5 hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow"
+            >
+              ✕
+            </button>
           </div>
 
           <div ref={listRef} data-lenis-prevent className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">

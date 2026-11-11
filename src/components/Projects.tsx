@@ -50,6 +50,16 @@ export default function Projects() {
                     </li>
                   ))}
                 </ul>
+                {p.url && (
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-btn mt-5 inline-block text-[10px]"
+                  >
+                    ▶ PLAY LIVE
+                  </a>
+                )}
               </div>
               {/* cartridge pins */}
               <div className="mx-8 mb-4 flex h-3 gap-1" aria-hidden>

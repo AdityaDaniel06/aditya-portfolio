@@ -4,7 +4,7 @@
 export const profile = {
   name: "Aditya Daniel",
   title: "Full-Stack Developer",
-  location: "Bhopal, India",
+  location: "India",
   email: "aditya.daniel06@gmail.com",
   linkedin: "https://linkedin.com/in/aditya-daniel06",
   github: "https://github.com/AdityaDaniel06",
@@ -72,7 +72,21 @@ export const experience = [
   },
 ];
 
-export const projects = [
+export const projects: {
+  name: string;
+  stack: string[];
+  description: string;
+  color: string;
+  url?: string;
+}[] = [
+  {
+    name: "Snippi",
+    stack: ["Monaco Editor", "bcrypt", "Vercel"],
+    description:
+      "A private library for the code you reuse. Save a SQL query, a config block, a shell one-liner or a helper function once, then find it and copy it in seconds. You can also share a snippet with a teammate.",
+    color: "#4fc3ff",
+    url: "https://code-snippi.vercel.app/",
+  },
   {
     name: "Page By Page",
     stack: ["React JS", "Express", "MongoDB", "Node JS", "Tailwind CSS"],
@@ -115,7 +129,7 @@ export function resumeAsText(): string {
       (e) => `- ${e.company} — ${e.role} (${e.period}):\n  * ${e.points.join("\n  * ")}`
     ),
     `Projects:`,
-    ...projects.map((p) => `- ${p.name} (${p.stack.join(", ")}): ${p.description}`),
+    ...projects.map((p) => `- ${p.name} (${p.stack.join(", ")}): ${p.description}${p.url ? ` Live: ${p.url}` : ""}`),
     `Education: ${education.degree}, ${education.school}, ${education.period}`,
     `Achievements: ${achievements.map((a) => `${a.title} (${a.date}) — ${a.detail}`).join("; ")}`,
   ].join("\n");
